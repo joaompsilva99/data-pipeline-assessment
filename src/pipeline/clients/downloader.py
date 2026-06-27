@@ -7,10 +7,25 @@ logger = logging.getLogger(__name__)
 
 class Downloader:
     def __init__(self, timeout: int = 30):
+        """Init the Downloader.
+
+        Args:
+            timeout: Request timeout in seconds.
+        """
         self.timeout = timeout
 
-    # Downloads the content from the given URL and returns it as bytes.
     def download(self, url: str) -> bytes:
+        """Download the content from the given URL and return it as bytes.
+
+        Args:
+            url: The url to fetch the content from.
+
+        Returns:
+            The response content as bytes.
+
+        Raises:
+            DownloadError: If the download fails due to an HTTP error or connection issue.
+        """
         try:
             response = requests.get(url, timeout=self.timeout)
             response.raise_for_status()
