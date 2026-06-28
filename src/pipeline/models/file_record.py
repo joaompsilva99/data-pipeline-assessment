@@ -5,7 +5,7 @@ class FileRecord(BaseModel):
     """Represents a single record of a file."""
 
     # makes FileRecord immutable, can not change attributes after creation
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
+    model_config = ConfigDict(frozen=True)
 
     id: str
     file_name: str
