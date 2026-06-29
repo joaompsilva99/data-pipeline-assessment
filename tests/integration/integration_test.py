@@ -1,10 +1,13 @@
 import io
 import zipfile
 import responses
+import pandas as pd
 from pipeline.clients.downloader import Downloader
 from pipeline.instrument_parser import InstrumentParser
 from pipeline.registry import EsmaRegistryClient
 from pipeline.extractor import ZipExtractor
+from pipeline.instrument_transformer import InstrumentTransformer
+from pathlib import Path
 
 REGISTRY_URL = "https://registers.esma.europa.eu/solr/fake-query"
 ZIP_URL = "https://firds.esma.europa.eu/firds/DLTINS_20210119_01of02.zip"
@@ -76,7 +79,6 @@ INSTRUMENT_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 <ModfdRcrd>
 <FinInstrmGnlAttrbts>
 <Id>AT0000A2BJ35</Id>
-<FullNm>Turbo Long Open End Zertifikat auf SAP SE</FullNm>
 <ShrtNm>RCB/L CTF OE SAP</ShrtNm>
 <ClssfctnTp>RFSTCB</ClssfctnTp>
 <NtnlCcy>EUR</NtnlCcy>
@@ -101,7 +103,7 @@ def _build_zip(files: dict[str, bytes]) -> bytes:
 
 
 @responses.activate
-def test_full_chain_registry_to_instruments() -> None:
+def test_full_chain_registry_to_instruments(tmp_path: Path) -> None:
     """Registry fetch -> select -> zip download -> extract -> parse with HTTP mocked."""
     zip_bytes = _build_zip({"instrument.xml": INSTRUMENT_XML})
 
@@ -126,15 +128,24 @@ def test_full_chain_registry_to_instruments() -> None:
         stream.close()
         archive.close()
 
-    assert len(instruments) == 3
+    transformer = InstrumentTransformer()
+    df = transformer.to_dataframe(instruments)
+    output_path = tmp_path / "output.csv"
+    transformer.to_csv(df, str(output_path))
 
-    assert instruments[0].Id == "AT0000A2B3D9"
-    assert instruments[0].FullNm == "EGB OE TL.Z./SARTORIUS V"
-    assert instruments[0].Issr == "PQOH26KWDF7CG10L6792"
+    written = pd.read_csv(output_path)
 
-    # Same Id appears twice in real data, with different FullNm — confirms
-    # the parser doesn't deduplicate, matching the brief's "one row per
-    # FinInstrm" requirement.
-    assert instruments[1].Id == instruments[2].Id == "AT0000A2BJ35"
-    assert instruments[1].FullNm == "Raiffeisen Centrobank AG TurboL O.End SAP"
-    assert instruments[2].FullNm == "Turbo Long Open End Zertifikat auf SAP SE"
+    # EGB OE TL.Z./SARTORIUS V
+    assert len(written) == 3
+    assert written.loc[0, "FinInstrmGnlAttrbts.Id"] == "AT0000A2B3D9"
+    assert written.loc[0, "a_count"] == 0
+    assert written.loc[0, "contains_a"] == "NO"
+
+    # Raiffeisen Centrobank AG TurboL O.End SAP
+    assert written.loc[1, "a_count"] == 2
+    assert written.loc[1, "contains_a"] == "YES"
+
+    # Removed FullNm
+    assert pd.isna(written.loc[2, "FinInstrmGnlAttrbts.FullNm"])
+    assert written.loc[2, "a_count"] == 0
+    assert written.loc[2, "contains_a"] == "NO"
