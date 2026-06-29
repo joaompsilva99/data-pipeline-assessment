@@ -42,16 +42,17 @@ poetry run mypy src
 ```bash
 src/pipeline/
 ├── clients/
-│   └── downloader.py       # Generic HTTP client used for all downloads
+│   └── downloader.py         # Generic HTTP client used for all downloads
 ├── models/
-│   └── records.py          # FileRecord, Instrument (pydantic models)
-├── registry.py             # EsmaRegistryClient: fetch/parse/select registry files
-├── extractor.py            # ZipExtractor: locate and open the XML entry in a zip
-├── instrument_parser.py    # InstrumentParser: parse instrument XML into records
-└── exceptions.py           # Shared exception hierarchy
+│   └── records.py            # FileRecord, Instrument (pydantic models)
+├── registry.py               # EsmaRegistryClient: fetch/parse/select registry files
+├── extractor.py              # ZipExtractor: locate and open the XML entry in a zip
+├── instrument_parser.py      # InstrumentParser: parse instrument XML into records
+├── instrument_transformer.py # InstrumentTransformer: build DataFrame and CSV
+└── exceptions.py             # Shared exception hierarchy
 tests/
-├── unit/                   # One test module per class, fully isolated
-└── integration/            # Multi-class chains, with only HTTP mocked
+├── unit/                     # One test module per class, fully isolated
+└── integration/              # Multi-class chains, with only HTTP mocked
 ```
 
 ## Design notes and assumptions
@@ -71,10 +72,10 @@ tests/
   fields have been extracted.
 
 ## Abstraction choices
-`EsmaRegistryClient`, `ZipExtractor`, and `InstrumentParser` are concrete
-classes with no abstract base, since each currently has exactly one real
-implementation and no second data source/format is anticipated.
-`Downloader` is kept generic because its reused for two different
-downloads (registry XML, instrument zip).
+`EsmaRegistryClient`, `ZipExtractor`, `InstrumentParser`, and
+`InstrumentTransformer` are concrete classes with no abstract base,
+since each currently has exactly one real implementation and no
+second data source/format is anticipated.`Downloader` is kept generic
+because its reused for two different downloads (registry XML, instrument zip).
 The storage layer (not yet implemented) is the one place an abstraction
 is planned, since the document explicitly requires both S3 and Azure support.
