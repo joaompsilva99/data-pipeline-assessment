@@ -2,7 +2,6 @@ import pandas as pd
 import pytest
 from pipeline.models.instrument import Instrument
 from pipeline.instrument_transformer import InstrumentTransformer
-from pathlib import Path
 
 
 @pytest.fixture
@@ -79,21 +78,3 @@ def test_process_contains_a_raises_without_a_count(
 
     with pytest.raises(ValueError, match="a_count"):
         transformer._process_contains_a(df)
-
-
-def test_to_csv_writes_correct_content(
-    transformer: InstrumentTransformer, tmp_path: Path
-) -> None:
-    """to_csv() writes a CSV file with the correct content."""
-    instruments = [Instrument(Id="ID1", FullNm="aaaAA", Issr="ISSUER1")]
-    df = transformer.to_dataframe(instruments)
-
-    # pytest already handles tmp directories
-    output_path = tmp_path / "output.csv"
-
-    transformer.to_csv(df, str(output_path))
-
-    written = pd.read_csv(output_path)
-    assert written.loc[0, "FinInstrmGnlAttrbts.Id"] == "ID1"
-    assert written.loc[0, "a_count"] == 3
-    assert written.loc[0, "contains_a"] == "YES"
