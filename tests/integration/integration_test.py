@@ -1,17 +1,20 @@
 import io
 import zipfile
-import responses
-import pandas as pd
-from pipeline.clients.downloader import Downloader
-from pipeline.instrument_parser import InstrumentParser
-from pipeline.registry import EsmaRegistryClient
-from pipeline.extractor import ZipExtractor
-from pipeline.instrument_transformer import InstrumentTransformer
 from pathlib import Path
+
+import pandas as pd
+import responses
+
+from pipeline.clients.downloader import Downloader
+from pipeline.extractor import ZipExtractor
+from pipeline.instrument_parser import InstrumentParser
+from pipeline.instrument_transformer import InstrumentTransformer
+from pipeline.pipeline import Pipeline
+from pipeline.registry import EsmaRegistryClient
+from pipeline.storage.fsspec_storage import FsspecStorage
 
 REGISTRY_URL = "https://registers.esma.europa.eu/solr/fake-query"
 ZIP_URL = "https://firds.esma.europa.eu/firds/DLTINS_20210119_01of02.zip"
-
 
 REGISTRY_XML = f"""<?xml version="1.0" encoding="UTF-8"?>
 <response>
@@ -42,7 +45,6 @@ REGISTRY_XML = f"""<?xml version="1.0" encoding="UTF-8"?>
 </doc>
 </result>
 </response>"""
-
 
 INSTRUMENT_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 <BizData xmlns="urn:iso:std:iso:20022:tech:xsd:head.003.001.01">
@@ -78,8 +80,7 @@ INSTRUMENT_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 <FinInstrm>
 <ModfdRcrd>
 <FinInstrmGnlAttrbts>
-<Id>AT0000A2BJ35</Id>
-<ShrtNm>RCB/L CTF OE SAP</ShrtNm>
+<Id>AT0000A2BJ36</Id>
 <ClssfctnTp>RFSTCB</ClssfctnTp>
 <NtnlCcy>EUR</NtnlCcy>
 <CmmdtyDerivInd>false</CmmdtyDerivInd>
@@ -103,49 +104,46 @@ def _build_zip(files: dict[str, bytes]) -> bytes:
 
 
 @responses.activate
-def test_full_chain_registry_to_instruments(tmp_path: Path) -> None:
-    """Registry fetch -> select -> zip download -> extract -> parse with HTTP mocked."""
+def test_full_chain_registry_to_csv(tmp_path: Path) -> None:
+    """Full pipeline: registry fetch -> select -> download -> extract ->
+    parse -> transform -> CSV, using real classes throughout with only
+    HTTP mocked."""
     zip_bytes = _build_zip({"instrument.xml": INSTRUMENT_XML})
-
     responses.add(responses.GET, REGISTRY_URL, body=REGISTRY_XML, status=200)
     responses.add(responses.GET, ZIP_URL, body=zip_bytes, status=200)
 
-    downloader = Downloader()
-    registry_client = EsmaRegistryClient(downloader)
+    destination = str(tmp_path / "output.csv")
 
-    registry_xml_bytes = registry_client.download_registry(REGISTRY_URL)
-    records = registry_client.parse_xml(registry_xml_bytes)
-    selected = registry_client.select_record(records, file_type="DLTINS", index=1)
+    pipeline = Pipeline(
+        downloader=Downloader(),
+        registry_client=EsmaRegistryClient(Downloader()),
+        extractor=ZipExtractor(),
+        parser=InstrumentParser(),
+        transformer=InstrumentTransformer(),
+        storage_base=FsspecStorage(),
+    )
+    pipeline.run(
+        registry_url=REGISTRY_URL,
+        destination=destination,
+    )
 
-    downloaded_zip_bytes = downloader.download(str(selected.download_link))
+    written = pd.read_csv(destination)
 
-    extractor = ZipExtractor()
-    archive, stream = extractor.open_xml_stream_from_zip(downloaded_zip_bytes)
-    try:
-        parser = InstrumentParser()
-        instruments = parser.parse_xml(stream)
-    finally:
-        stream.close()
-        archive.close()
-
-    transformer = InstrumentTransformer()
-    df = transformer.to_dataframe(instruments)
-    output_path = tmp_path / "output.csv"
-    transformer.to_csv(df, str(output_path))
-
-    written = pd.read_csv(output_path)
-
-    # EGB OE TL.Z./SARTORIUS V
     assert len(written) == 3
+
+    # EGB OE TL.Z./SARTORIUS V — no lowercase 'a'
     assert written.loc[0, "FinInstrmGnlAttrbts.Id"] == "AT0000A2B3D9"
+    assert written.loc[0, "FinInstrmGnlAttrbts.FullNm"] == "EGB OE TL.Z./SARTORIUS V"
     assert written.loc[0, "a_count"] == 0
     assert written.loc[0, "contains_a"] == "NO"
 
-    # Raiffeisen Centrobank AG TurboL O.End SAP
+    # Raiffeisen Centrobank AG TurboL O.End SAP — 2 lowercase 'a'
+    assert written.loc[1, "FinInstrmGnlAttrbts.Id"] == "AT0000A2BJ35"
     assert written.loc[1, "a_count"] == 2
     assert written.loc[1, "contains_a"] == "YES"
 
-    # Removed FullNm
+    # missing FullNm — a_count must be 0 per the brief
+    assert written.loc[2, "FinInstrmGnlAttrbts.Id"] == "AT0000A2BJ36"
     assert pd.isna(written.loc[2, "FinInstrmGnlAttrbts.FullNm"])
     assert written.loc[2, "a_count"] == 0
     assert written.loc[2, "contains_a"] == "NO"

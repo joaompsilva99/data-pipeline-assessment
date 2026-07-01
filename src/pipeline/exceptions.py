@@ -20,3 +20,9 @@ class NoMatchingRecordError(PipelineError):
     """Raised when no matching record is found in the registry."""
 
     pass
+
+
+class StorageError(PipelineError):
+    """Raised when there is an error with a storage operation."""
+
+    pass

@@ -2,7 +2,6 @@ import logging
 import pandas as pd
 import numpy as np
 from pipeline.models.instrument import Instrument
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -35,16 +34,6 @@ class InstrumentTransformer:
         self._process_contains_a(df)
 
         return df
-
-    def to_csv(self, df: pd.DataFrame, path: str | Path) -> None:
-        """Write the DataFrame to a CSV file.
-
-        Args:
-            df: The DataFrame to write.
-            path: Output file path.
-        """
-        df.to_csv(path, index=False)
-        logger.info(f"Wrote {len(df)} rows to {path}")
 
     def _process_a_count(self, df: pd.DataFrame) -> None:
         """Add the a_count column: 'a' occurrences in FullNm column.
